@@ -5,6 +5,8 @@ const connectDB = require('./config/db');
 const webhookRouter = require('./routes/webhook');
 
 const app = express();
+app.set('trust proxy', 1); // Trust Render's reverse proxy
+
 const PORT = process.env.PORT || 3000;
 
 // Connect to database
