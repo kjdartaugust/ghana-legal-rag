@@ -23,7 +23,7 @@ function normalizeDoc(raw: string): string {
 }
 
 function parseMessage(content: string): { text: string; sources: string[] } {
-  const match = content.match(/\nSource:\s*(.+)$/s);
+  const match = content.match(/\nSource:\s*(.+)$/);
   if (!match) return { text: content.trim(), sources: [] };
 
   const rawText = content.slice(0, match.index).trim();
