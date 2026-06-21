@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Keep vectorstore (needed for Render deployment)
+!vectorstore/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
