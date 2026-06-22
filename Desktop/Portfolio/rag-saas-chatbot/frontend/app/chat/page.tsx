@@ -22,14 +22,14 @@ function normalizeDoc(raw: string): string {
   return DOC_NAMES[key] ?? raw.trim();
 }
 
+function replaceInline(t: string): string {
+  return t.replace(/\[([^\]]+\.pdf)\]/gi, (_, f) => `[${normalizeDoc(f)}]`);
+}
+
 function parseMessage(content: string): { text: string; sources: string[] } {
   const match = content.match(/[\n\r]*Source:\s*(.+)$/i);
-  if (!match) return { text: content.trim(), sources: [] };
-  const rawText = content.slice(0, match.index).trim();
-  const text = rawText.replace(
-    /\[([^\]]+\.pdf)\]/gi,
-    (_, f) => `[${normalizeDoc(f)}]`
-  );
+  if (!match) return { text: replaceInline(content.trim()), sources: [] };
+  const text = replaceInline(content.slice(0, match.index).trim());
   const sources = match[1].split(/[;,]/).map(normalizeDoc).filter(Boolean);
   return { text, sources };
 }
