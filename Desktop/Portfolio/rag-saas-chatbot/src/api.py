@@ -41,7 +41,7 @@ def verify_clerk_token(authorization: str = Header(...)) -> dict:
             algorithms=["RS256"],
             options={"verify_aud": False},
         )
-    except jwt.PyJWTError as exc:
+    except Exception as exc:
         raise HTTPException(status_code=401, detail=str(exc))
 
 
@@ -56,5 +56,8 @@ def health():
 
 @app.post("/chat")
 def chat(body: ChatRequest, _user: dict = Depends(verify_clerk_token)):
-    answer = run_chain(body.question)
-    return {"answer": answer}
+    try:
+        answer = run_chain(body.question)
+        return {"answer": answer}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
