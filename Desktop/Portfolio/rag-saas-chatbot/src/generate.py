@@ -28,7 +28,7 @@ Instructions:
 respond only with: "I don't have enough information on that topic in the available \
 documents. Please consult a qualified legal professional or contact the Ghana Legal \
 Aid Commission on 0302 664 951."
-- Always end your answer with: "Source: [document name]"
+- Always end your answer on its own line with exactly: "Source: [document name]" (put a blank line before it)
 - Reminder: This response is for informational purposes only and does not \
 constitute legal advice."""
 
