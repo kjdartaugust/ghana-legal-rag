@@ -2,6 +2,7 @@
 
 import { useAuth, UserButton } from "@clerk/nextjs";
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { Logo } from "../components/Logo";
 
 interface Message {
@@ -167,7 +168,7 @@ export default function ChatPage() {
 
       {/* Header */}
       <header className="flex items-center justify-between px-6 h-16 bg-white border-b border-slate-100 shadow-sm flex-shrink-0">
-        <Logo size="sm" />
+        <Link href="/"><Logo size="sm" /></Link>
         <div className="flex items-center gap-4">
           <span className="hidden sm:block text-xs text-slate-400 font-medium">Ghana Legal Assistant</span>
           <UserButton />
