@@ -1,15 +1,17 @@
 import os
+import json
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 os.environ.setdefault("CHROMA_TELEMETRY", "False")
 
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import jwt
 from jwt import PyJWKClient
 
 from src.config import CLERK_JWKS_URL, FRONTEND_URL
-from src.chain import run_chain  # loads retriever at startup
+from src.chain import stream_chain
 
 app = FastAPI(title="Ghana Legal RAG API")
 
@@ -45,8 +47,14 @@ def verify_clerk_token(authorization: str = Header(...)) -> dict:
         raise HTTPException(status_code=401, detail=str(exc))
 
 
+class HistoryMessage(BaseModel):
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
     question: str
+    history: list[HistoryMessage] = []
 
 
 @app.get("/health")
@@ -56,8 +64,15 @@ def health():
 
 @app.post("/chat")
 def chat(body: ChatRequest, _user: dict = Depends(verify_clerk_token)):
-    try:
-        answer = run_chain(body.question)
-        return {"answer": answer}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    history = [{"role": m.role, "content": m.content} for m in body.history]
+
+    def generate():
+        try:
+            for event in stream_chain(body.question, history):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")

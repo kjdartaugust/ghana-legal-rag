@@ -8,6 +8,8 @@ import { Logo } from "../components/Logo";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  intent?: string;
+  intentLabel?: string;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
@@ -16,6 +18,13 @@ const DOC_NAMES: Record<string, string> = {
   "1992-CONSTITUTION-OF-THE-REPUBLIC-OF-GHANA": "1992 Constitution",
   "COMPANIES-ACT-2019-ACT-992": "Companies Act 2019",
   "LABOUR-ACT-2003-ACT-651": "Labour Act 2003",
+};
+
+const INTENT_ICONS: Record<string, string> = {
+  rag: "📚",
+  find_help: "🤝",
+  template: "📄",
+  safety: "🛡️",
 };
 
 function normalizeDoc(raw: string): string {
@@ -35,6 +44,24 @@ function parseMessage(content: string): { text: string; sources: string[] } {
   return { text, sources };
 }
 
+function renderText(text: string) {
+  return text.split("\n").map((line, i, arr) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <span key={i}>
+        {parts.map((p, j) =>
+          p.startsWith("**") && p.endsWith("**") ? (
+            <strong key={j}>{p.slice(2, -2)}</strong>
+          ) : (
+            p
+          )
+        )}
+        {i < arr.length - 1 && <br />}
+      </span>
+    );
+  });
+}
+
 const STARTER_QUESTIONS = [
   "What's the minimum wage in Ghana?",
   "How do I register a company in Ghana?",
@@ -52,24 +79,7 @@ function SendIcon() {
   );
 }
 
-function TypingIndicator() {
-  return (
-    <div className="flex items-start gap-3 animate-fade-in">
-      <div className="w-8 h-8 rounded-full bg-[#071e4a] flex items-center justify-center flex-shrink-0 text-white text-xs font-bold">
-        G
-      </div>
-      <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-sm px-5 py-4 shadow-message">
-        <div className="flex gap-1.5 items-center">
-          <div className="w-2 h-2 bg-slate-400 rounded-full animate-dot-1" />
-          <div className="w-2 h-2 bg-slate-400 rounded-full animate-dot-2" />
-          <div className="w-2 h-2 bg-slate-400 rounded-full animate-dot-3" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MessageBubble({ msg }: { msg: Message }) {
+function MessageBubble({ msg, isLoading }: { msg: Message; isLoading?: boolean }) {
   if (msg.role === "user") {
     return (
       <div className="flex items-end justify-end gap-2 animate-fade-up">
@@ -88,8 +98,22 @@ function MessageBubble({ msg }: { msg: Message }) {
         G
       </div>
       <div className="max-w-lg">
-        <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-sm px-5 py-4 text-sm leading-relaxed text-slate-700 shadow-message whitespace-pre-wrap">
-          {text}
+        {msg.intentLabel && (
+          <div className="flex items-center gap-1.5 mb-2 text-xs text-slate-400 font-medium">
+            <span>{INTENT_ICONS[msg.intent ?? "rag"] ?? "📚"}</span>
+            <span>{msg.intentLabel}</span>
+          </div>
+        )}
+        <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-sm px-5 py-4 text-sm leading-relaxed text-slate-700 shadow-message">
+          {isLoading && !text ? (
+            <div className="flex gap-1.5 items-center h-5">
+              <div className="w-2 h-2 bg-slate-400 rounded-full animate-dot-1" />
+              <div className="w-2 h-2 bg-slate-400 rounded-full animate-dot-2" />
+              <div className="w-2 h-2 bg-slate-400 rounded-full animate-dot-3" />
+            </div>
+          ) : (
+            renderText(text)
+          )}
         </div>
         {sources.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -128,7 +152,14 @@ export default function ChatPage() {
     if (!question || loading) return;
     if (!questionOverride) setInput("");
 
-    setMessages((prev) => [...prev, { role: "user", content: question }]);
+    // Capture history before adding new messages
+    const historyToSend = messages.map((m) => ({ role: m.role, content: m.content }));
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: question },
+      { role: "assistant", content: "" },
+    ]);
     setLoading(true);
 
     try {
@@ -139,17 +170,70 @@ export default function ChatPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, history: historyToSend }),
       });
 
       if (!res.ok) throw new Error(`Error ${res.status}`);
-      const data = await res.json();
-      setMessages((prev) => [...prev, { role: "assistant", content: data.answer }]);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulated = "";
+      let intent: string | undefined;
+      let intentLabel: string | undefined;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.meta) {
+              intent = parsed.meta.intent;
+              intentLabel = parsed.meta.label;
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { ...updated[updated.length - 1], intent, intentLabel };
+                return updated;
+              });
+            }
+            if (parsed.token) {
+              accumulated += parsed.token;
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                  role: "assistant",
+                  content: accumulated,
+                  intent,
+                  intentLabel,
+                };
+                return updated;
+              });
+            }
+            if (parsed.error) throw new Error(parsed.error);
+          } catch (e) {
+            if (e instanceof SyntaxError) continue;
+            throw e;
+          }
+        }
+      }
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Something went wrong. Please try again." },
-      ]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          role: "assistant",
+          content: "Something went wrong. Please try again.",
+        };
+        return updated;
+      });
     } finally {
       setLoading(false);
       textareaRef.current?.focus();
@@ -205,10 +289,12 @@ export default function ChatPage() {
           )}
 
           {messages.map((msg, i) => (
-            <MessageBubble key={i} msg={msg} />
+            <MessageBubble
+              key={i}
+              msg={msg}
+              isLoading={loading && i === messages.length - 1 && msg.role === "assistant"}
+            />
           ))}
-
-          {loading && <TypingIndicator />}
 
           <div ref={bottomRef} />
         </div>
